@@ -1,0 +1,66 @@
+---
+title: "Untitled"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+library(pacman)
+pacman::p_load(
+  flexdashboard,
+  tidyverse,
+  ggthemes,
+  ggrepel
+)
+
+blue <- '#1f78b4'
+
+myTheme <- function () {
+  theme_fivethirtyeight() +
+    theme(axis.title = element_text())
+}
+
+migr <- read_csv('./data/migr_resfirst.csv')
+```
+
+Column {data-width=650}
+-----------------------------------------------------------------------
+
+### Chart A
+
+```{r}
+migr %>% 
+  filter(year == 2018) %>% 
+  group_by(geo) %>% 
+  summarise(total = sum(value)) %>% 
+  arrange(desc(total)) %>% 
+  mutate(geo = geo %>% fct_inorder() %>% fct_lump(20, w = total) %>%  fct_rev()) %>% 
+  ggplot(aes(geo, total * 1e-3)) +
+  geom_col(fill = blue) +
+  coord_flip() +
+  labs(
+    title = '',
+    subtitle = '2018',
+    x = '',
+    y = 'Tsd.'
+  ) +
+  myTheme()
+```
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### Chart B
+
+```{r}
+
+```
+
+### Chart C
+
+```{r}
+
+```
+

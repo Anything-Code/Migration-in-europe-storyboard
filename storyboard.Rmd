@@ -1,0 +1,337 @@
+---
+title: "Vergleich Neuvisumstellender mit Bevölkerung in Europäischen Ländern"
+output: 
+  flexdashboard::flex_dashboard:
+    storyboard: true
+---
+
+```{r setup, include=FALSE}
+library(pacman)
+
+pacman::p_load(
+  flexdashboard,
+  tidyverse,
+  ggthemes,
+  ggrepel
+)
+
+blue <- '#1f78b4'
+
+myTheme <- function () {
+  theme_fivethirtyeight() +
+    theme(axis.title = element_text())
+}
+
+migr <- read_csv('./data/migr_resfirst.csv')
+demo_pjan <- read_csv('./data/demo_pjan.csv')
+
+onlyDeTotAsDe <- demo_pjan %>% 
+  filter(!is.na(value), geo == 'DE_TOT') %>% 
+  mutate(geo = 'DE')
+
+cleanPjan <- demo_pjan %>% 
+  filter(!is.na(value), str_length(geo) == 2, geo != 'DE', year >= 2008) %>% 
+  rbind(onlyDeTotAsDe) %>% 
+  group_by(year, geo) %>%  
+  summarise(res  = sum(value))
+
+fullMigr <- migr %>% inner_join(cleanPjan)
+```
+
+### Neuvisumstellende in Europäischen Ländern
+
+```{r}
+fullMigr %>% 
+  group_by(year, reason) %>% 
+  summarise(total = sum(value)) %>% 
+  ggplot(aes(year, total / 1e6, fill = reason)) + 
+  geom_col() + 
+  myTheme() + 
+  scale_x_continuous(
+    breaks = seq(2008, 2018, by = 1),
+  ) + 
+  theme(legend.position = 'right', legend.direction = 'vertical') + 
+  scale_fill_discrete(name = 'Grund') + 
+  labs(
+    title = 'Neuvisumstellende in Europäischen Ländern',
+    subtitle = '2008 - 2018',
+    x = 'Jahr',
+    y = 'Anzahl in Mio.'
+  )
+```
+
+### 'Zeitreihe der "interessantesten Länder"
+
+```{r}
+fullMigr %>% 
+  filter(geo %in% c('CY', 'LI', 'MT', 'SE', 'DE', 'PL')) %>% 
+  group_by(year, res, geo) %>% 
+  summarise(migr = sum(value)) %>% 
+  mutate(prop = migr / res * 1e3) %>% 
+  ggplot(aes(year, prop, color = geo)) +
+  geom_point(size = 3) +
+  geom_line(size = 1) +
+  myTheme() +
+  scale_x_continuous(
+    breaks = seq(2008, 2018, by = 1),
+  ) + 
+  theme(
+    legend.position = 'right', 
+    legend.direction = 'vertical'
+  ) +
+  scale_color_discrete(
+    name = 'Länder',
+    limits = c('MT', 'LI', 'CY', 'PL', 'SE', 'DE')
+  ) + 
+  labs(
+    title = 'Zeitreihe der "interessantesten Länder"',
+    subtitle = 'Verhältnis von Neuvisumstellenden zu Bevölkerungszahl',
+    x = 'Jahr',
+    y = 'Anzahl von Neuvisumstellenden pro 1000 Einwohner'
+  )
+```
+
+### Durchschnittliche Neuvisumstellende
+
+```{r}
+fullMigr %>% 
+  group_by(geo) %>% 
+  summarise(migr = sum(value) / 10) %>% 
+  inner_join(
+    fullMigr %>% 
+      group_by(geo) %>% 
+      summarise(res = mean(res))
+  ) %>% 
+  mutate(prop = migr / res * 1e3) %>% 
+  arrange(desc(prop)) %>% 
+  mutate(size = case_when(
+    res < 3e6 ~ 'klein (kleiner 3 mio.)',
+    res < 30e6 ~ 'mittel (kleiner 30 mio.)',
+    TRUE ~ 'groß (größer 30 mio.)'
+  )) %>% 
+  mutate(nr = row_number()) %>% 
+  filter(nr <= 10 | nr > max(nr) - 10) %>% 
+  ggplot(aes(x = reorder(geo, prop), y = prop, color = size)) + 
+  geom_point(size = 5) +
+  scale_color_discrete(
+    name = 'Größe',
+    limits = c('klein (kleiner 3 mio.)', 'mittel (kleiner 30 mio.)', 'groß (größer 30 mio.)')
+  ) + 
+  scale_y_log10() +
+  coord_flip() +
+  myTheme() +
+  labs(
+    title = 'Durchschnittliche Neuvisumstellende',
+    subtitle = 'von 2008 - 2018 (nur top 10 & bottom 10)',
+    x = 'Länder',
+    y = 'Anzahl von Neuvisumstellenden pro 1000 Einwohner'
+  )
+```
+
+### Herkunft Neuvisumstellender in Zypern 2018
+
+```{r}
+zyFilter <- fullMigr %>% 
+  filter(geo == 'CY', year == 2018, !is.na(citizen)) %>%
+  group_by(citizen) %>% 
+  summarise(value = sum(value)) %>%
+  arrange(desc(value)) %>% 
+  head(10) %>% 
+  pull(citizen)
+
+fullMigr %>% 
+  filter(geo == 'CY', year == 2018, !is.na(citizen), citizen %in% zyFilter) %>%
+  group_by(citizen, reason) %>% 
+  summarise(value = sum(value)) %>%
+  arrange(desc(value)) %>%
+  ungroup() %>% 
+  mutate(citizen = citizen %>% fct_relevel(zyFilter)) %>% 
+  ggplot(aes(citizen, value, fill = reason)) +
+  geom_col() +
+  myTheme() +
+  labs(
+    title = 'Herkunft Neuvisumstellender in Zypern',
+    subtitle = '2018',
+    x = 'Herkunftsland',
+    y = 'Anzahl'
+  )
+```
+
+### Herkunft Neuvisumstellender in Malta 2018
+
+```{r}
+mtFilter <- fullMigr %>% 
+  filter(geo == 'MT', year == 2018, !is.na(citizen)) %>%
+  group_by(citizen) %>% 
+  summarise(value = sum(value)) %>%
+  arrange(desc(value)) %>% 
+  head(10) %>% 
+  pull(citizen)
+
+fullMigr %>% 
+  filter(geo == 'MT', year == 2018, !is.na(citizen), citizen %in% mtFilter) %>%
+  group_by(citizen, reason) %>% 
+  summarise(value = sum(value)) %>%
+  arrange(desc(value)) %>%
+  ungroup() %>% 
+  mutate(citizen = citizen %>% fct_relevel(mtFilter)) %>% 
+  ggplot(aes(citizen, value, fill = reason)) +
+  geom_col() +
+  myTheme() +
+  labs(
+    title = 'Herkunft Neuvisumstellender in Malta',
+    subtitle = '2018',
+    x = 'Herkunftsland',
+    y = 'Anzahl'
+  )
+```
+
+### Herkunft Neuvisumstellender in Lichtenstein 2018
+
+```{r}
+liFilter <- fullMigr %>% 
+  filter(geo == 'LI', year == 2018, !is.na(citizen)) %>%
+  group_by(citizen) %>% 
+  summarise(value = sum(value)) %>%
+  arrange(desc(value)) %>% 
+  head(10) %>% 
+  pull(citizen)
+
+fullMigr %>% 
+  filter(geo == 'LI', year == 2018, !is.na(citizen), citizen %in% liFilter) %>%
+  group_by(citizen, reason) %>% 
+  summarise(value = sum(value)) %>%
+  arrange(desc(value)) %>%
+  ungroup() %>% 
+  mutate(citizen = citizen %>% fct_relevel(liFilter)) %>% 
+  ggplot(aes(citizen, value, fill = reason)) +
+  geom_col() +
+  myTheme() +
+  labs(
+    title = 'Herkunft Neuvisumstellender in Lichtenstein',
+    subtitle = '2018',
+    x = 'Herkunftsland',
+    y = 'Anzahl'
+  )
+```
+
+### Herkunft Neuvisumstellender in Schweden 2018
+
+```{r}
+seFilter <- fullMigr %>% 
+  filter(geo == 'SE', year == 2018, !is.na(citizen)) %>%
+  group_by(citizen) %>% 
+  summarise(value = sum(value)) %>%
+  arrange(desc(value)) %>% 
+  head(10) %>% 
+  pull(citizen)
+
+fullMigr %>% 
+  filter(
+    geo == 'SE',
+    year == 2018,
+    !is.na(citizen),
+    citizen %in% seFilter
+  ) %>%
+  group_by(citizen, reason, year) %>% 
+  summarise(value = sum(value)) %>%
+  arrange(desc(year, value)) %>% 
+  ungroup() %>% 
+  mutate(citizen = citizen %>% fct_relevel(seFilter)) %>% 
+  ggplot(aes(citizen, value, fill = reason)) +
+  geom_col() +
+  myTheme() +
+  labs(
+    title = 'Herkunft Neuvisumstellender in Schweden',
+    subtitle = '2018',
+    x = 'Herkunftsland',
+    y = 'Anzahl'
+  )
+```
+
+### Herkunft Neuvisumsteellender in England 2018
+
+```{r}
+ukFilter <- fullMigr %>% 
+  filter(geo == 'UK', year == 2018, !is.na(citizen)) %>%
+  group_by(citizen) %>% 
+  summarise(value = sum(value)) %>%
+  arrange(desc(value)) %>% 
+  head(10) %>% 
+  pull(citizen)
+
+fullMigr %>% 
+  filter(geo == 'UK', year == 2018, !is.na(citizen), citizen %in% ukFilter) %>%
+  group_by(citizen, reason) %>% 
+  summarise(value = sum(value)) %>%
+  arrange(desc(value)) %>%
+  ungroup() %>% 
+  mutate(citizen = citizen %>% fct_relevel(ukFilter)) %>% 
+  ggplot(aes(citizen, value, fill = reason)) +
+  geom_col() +
+  myTheme() +
+  labs(
+    title = 'Herkunft Neuvisumstellender in England',
+    subtitle = '2018',
+    x = 'Herkunftsland',
+    y = 'Anzahl'
+  )
+```
+
+### Herkunft Neuvisumstellender in Polen 2018
+
+```{r}
+plFilter <- fullMigr %>% 
+  filter(geo == 'PL', year == 2018, !is.na(citizen)) %>%
+  group_by(citizen) %>% 
+  summarise(value = sum(value)) %>%
+  arrange(desc(value)) %>% 
+  head(10) %>% 
+  pull(citizen)
+
+fullMigr %>% 
+  filter(geo == 'PL', year == 2018, !is.na(citizen), citizen %in% plFilter) %>%
+  group_by(citizen, reason) %>% 
+  summarise(value = sum(value)) %>%
+  arrange(desc(value)) %>%
+  ungroup() %>% 
+  mutate(citizen = citizen %>% fct_relevel(plFilter)) %>% 
+  ggplot(aes(citizen, value / 1e3, fill = reason)) +
+  geom_col() +
+  myTheme() +
+  labs(
+    title = 'Herkunft Neuvisumstellender in Polen',
+    subtitle = '2018',
+    x = 'Herkunftsland',
+    y = 'Anzahl'
+  )
+```
+
+### Herkunft Neuvisumstellender in Deutschland 2018
+
+```{r}
+deFilter <- fullMigr %>% 
+  filter(geo == 'DE', year == 2018, !is.na(citizen)) %>%
+  group_by(citizen) %>% 
+  summarise(value = sum(value)) %>%
+  arrange(desc(value)) %>% 
+  head(10) %>% 
+  pull(citizen)
+
+fullMigr %>% 
+  filter(geo == 'DE', year == 2018, !is.na(citizen), citizen %in% deFilter) %>%
+  group_by(citizen, reason) %>% 
+  summarise(value = sum(value)) %>%
+  arrange(desc(value)) %>%
+  ungroup() %>% 
+  mutate(citizen = citizen %>% fct_relevel(deFilter)) %>% 
+  ggplot(aes(citizen, value, fill = reason)) +
+  geom_col() +
+  myTheme() +
+  labs(
+    title = 'Herkunft Neuvisumstellender in DE',
+    subtitle = '2018',
+    x = 'Herkunftsland',
+    y = 'Anzahl'
+  )
+```
